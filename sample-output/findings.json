@@ -1,0 +1,1159 @@
+{
+  "summary": {
+    "total_findings": 32,
+    "by_severity": {
+      "Critical": 10,
+      "High": 6,
+      "Medium": 15,
+      "Low": 0,
+      "Informational": 1
+    },
+    "mitigated_findings": 6
+  },
+  "remediation_campaigns": [
+    {
+      "campaign_id": "CAMP-001",
+      "title": "Production payment asset access: Provider credentials (Secrets Manager), Tokenization vault secrets (Secrets Manager), Payments KMS keys",
+      "description": "3 roles are exposed through the same shared managed policy (`arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess`). Remediating the central root cause once resolves all of them, instead of editing 3 roles individually.",
+      "finding_type": "pci_sensitive_data_access",
+      "severity": "Critical",
+      "root_cause": "arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess",
+      "policy_arn": "arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess",
+      "affected_roles": [
+        "data-warehouse-sync",
+        "fraud-scoring-batch",
+        "reporting-etl"
+      ],
+      "role_count": 3,
+      "remediation": "Fix the shared managed policy `arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess` at the source. Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network. Note: Replace the generic KMS key wildcard with your specific Key UUID ARNs during deployment, as IAM identity policies do not natively resolve wildcards on KMS alias strings for cryptographic operations.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "remediation_terraform": "# CAMP-001 \u2014 root cause: arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess\n# Fixes 3 roles in one apply: data-warehouse-sync, fraud-scoring-batch, reporting-etl\n\nresource \"aws_iam_policy\" \"remediated_camp_001\" {\n  name        = \"yuno-remediated-camp_001\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer (CAMP-001)\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:*\", \"kms:Decrypt\", \"kms:GenerateDataKey\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_camp_001_data_warehouse_sync\" {\n  role       = \"data-warehouse-sync\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_camp_001.arn\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_camp_001_fraud_scoring_batch\" {\n  role       = \"fraud-scoring-batch\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_camp_001.arn\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_camp_001_reporting_etl\" {\n  role       = \"reporting-etl\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_camp_001.arn\n}"
+    },
+    {
+      "campaign_id": "CAMP-002",
+      "title": "Production payment asset access: Provider credentials (Secrets Manager), Tokenization vault secrets (Secrets Manager), Payments KMS keys",
+      "description": "2 roles are exposed through the same shared policy name (`SharedLaxSecretsPolicy`). Remediating the central root cause once resolves all of them, instead of editing 2 roles individually.",
+      "finding_type": "pci_sensitive_data_access",
+      "severity": "High",
+      "root_cause": "SharedLaxSecretsPolicy",
+      "policy_arn": "SharedLaxSecretsPolicy",
+      "affected_roles": [
+        "merchant-onboarding",
+        "merchant-onboarding-service-v2"
+      ],
+      "role_count": 2,
+      "remediation": "Fix the shared policy name `SharedLaxSecretsPolicy` at the source. Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network. Note: Replace the generic KMS key wildcard with your specific Key UUID ARNs during deployment, as IAM identity policies do not natively resolve wildcards on KMS alias strings for cryptographic operations.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "remediation_terraform": "# CAMP-002 \u2014 root cause: SharedLaxSecretsPolicy\n# Fixes 2 roles in one apply: merchant-onboarding, merchant-onboarding-service-v2\n\nresource \"aws_iam_policy\" \"remediated_camp_002\" {\n  name        = \"yuno-remediated-camp_002\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer (CAMP-002)\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:DescribeSecret\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_camp_002_merchant_onboarding\" {\n  role       = \"merchant-onboarding\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_camp_002.arn\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_camp_002_merchant_onboarding_service_v2\" {\n  role       = \"merchant-onboarding-service-v2\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_camp_002.arn\n}"
+    }
+  ],
+  "findings": [
+    {
+      "role_name": "break-glass-admin",
+      "role_arn": "arn:aws:iam::111122223333:role/break-glass-admin",
+      "finding_type": "privilege_escalation_chain",
+      "title": "Privilege-escalation chain: iam:PassRole(*) + iam:CreateRole, iam:AttachRolePolicy, iam:PutRolePolicy, iam:CreatePolicyVersion, iam:UpdateAssumeRolePolicy, sts:AssumeRole, lambda:CreateFunction, ec2:RunInstances",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "This permission combination lets the principal mint or rewrite an IAM role with arbitrary policies and hand it to a compute/service principal. That is a path to full account takeover \u2014 including the tokenization vault and payments KMS keys \u2014 i.e. total CDE compromise and a catastrophic PCI DSS failure, independent of how narrow any single statement looks.",
+      "remediation": "Break the chain: scope iam:PassRole to the exact service-role ARNs the workload must pass (never '*') and add an iam:PassedToService condition; remove iam:CreateRole / iam:AttachRolePolicy / iam:PutRolePolicy unless this is a provisioning role, in which case gate it behind a permission boundary that the created roles must inherit.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "iam:PassRole"
+        ],
+        "Resource": [
+          "arn:aws:iam::ACCOUNT:role/service-role/specific-task-role"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "iam:PassedToService": "ecs-tasks.amazonaws.com"
+          }
+        }
+      },
+      "evidence": {
+        "chain": "iam:PassRole(*) + iam:CreateRole, iam:AttachRolePolicy, iam:PutRolePolicy, iam:CreatePolicyVersion, iam:UpdateAssumeRolePolicy, sts:AssumeRole, lambda:CreateFunction, ec2:RunInstances",
+        "companions": [
+          "iam:CreateRole",
+          "iam:AttachRolePolicy",
+          "iam:PutRolePolicy",
+          "iam:CreatePolicyVersion",
+          "iam:UpdateAssumeRolePolicy",
+          "sts:AssumeRole",
+          "lambda:CreateFunction",
+          "ec2:RunInstances"
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_break_glass_admin_privilege_escalation_chain\" {\n  name        = \"yuno-remediated-break_glass_admin\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"iam:PassRole\"]\n        Resource = [\"arn:aws:iam::ACCOUNT:role/service-role/specific-task-role\"]\n        Condition = {\n          StringEquals = {\n            \"iam:PassedToService\" = \"ecs-tasks.amazonaws.com\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_break_glass_admin_privilege_escalation_chain\" {\n  role       = \"break-glass-admin\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_break_glass_admin_privilege_escalation_chain.arn\n}"
+    },
+    {
+      "role_name": "break-glass-admin",
+      "role_arn": "arn:aws:iam::111122223333:role/break-glass-admin",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Provider credentials (Secrets Manager), Tokenization vault secrets (Secrets Manager), Payments KMS keys",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Exposes live acquirer / PSP API credentials. An attacker could initiate or reroute settlements on behalf of the gateway, breaching PCI DSS Req. 3 (protection of stored credentials) and Req. 7 (least privilege on cardholder-data systems). Grants reach into the tokenization vault that maps tokens to PANs. Compromise enables detokenization of cardholder data \u2014 a reportable PCI DSS Req. 3.4 breach and effectively a full CDE compromise. Controls the KMS keys that encrypt cardholder data at rest. Decrypt/Encrypt access here means an attacker can read or forge encrypted PANs, defeating PCI DSS Req. 3.5/3.6 key-management controls.",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network. Note: Replace the generic KMS key wildcard with your specific Key UUID ARNs during deployment, as IAM identity policies do not natively resolve wildcards on KMS alias strings for cryptographic operations.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "*"
+        ],
+        "resources": [
+          "*"
+        ],
+        "source_type": "managed",
+        "source_name": "AdministratorAccess"
+      },
+      "shared_policy_arn": "arn:aws:iam::aws:policy/AdministratorAccess",
+      "shared_policy_name": "AdministratorAccess",
+      "policy_fingerprint": "5020d765e4cc",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_break_glass_admin_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-break_glass_admin\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_break_glass_admin_pci_sensitive_data_access\" {\n  role       = \"break-glass-admin\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_break_glass_admin_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "ci-deployer",
+      "role_arn": "arn:aws:iam::111122223333:role/ci-deployer",
+      "finding_type": "privilege_escalation_chain",
+      "title": "Privilege-escalation chain: iam:PassRole(*) + iam:CreateRole, iam:AttachRolePolicy",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "This permission combination lets the principal mint or rewrite an IAM role with arbitrary policies and hand it to a compute/service principal. That is a path to full account takeover \u2014 including the tokenization vault and payments KMS keys \u2014 i.e. total CDE compromise and a catastrophic PCI DSS failure, independent of how narrow any single statement looks.",
+      "remediation": "Break the chain: scope iam:PassRole to the exact service-role ARNs the workload must pass (never '*') and add an iam:PassedToService condition; remove iam:CreateRole / iam:AttachRolePolicy / iam:PutRolePolicy unless this is a provisioning role, in which case gate it behind a permission boundary that the created roles must inherit.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "iam:PassRole"
+        ],
+        "Resource": [
+          "arn:aws:iam::ACCOUNT:role/service-role/specific-task-role"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "iam:PassedToService": "ecs-tasks.amazonaws.com"
+          }
+        }
+      },
+      "evidence": {
+        "chain": "iam:PassRole(*) + iam:CreateRole, iam:AttachRolePolicy",
+        "companions": [
+          "iam:CreateRole",
+          "iam:AttachRolePolicy"
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_ci_deployer_privilege_escalation_chain\" {\n  name        = \"yuno-remediated-ci_deployer\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"iam:PassRole\"]\n        Resource = [\"arn:aws:iam::ACCOUNT:role/service-role/specific-task-role\"]\n        Condition = {\n          StringEquals = {\n            \"iam:PassedToService\" = \"ecs-tasks.amazonaws.com\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_ci_deployer_privilege_escalation_chain\" {\n  role       = \"ci-deployer\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_ci_deployer_privilege_escalation_chain.arn\n}"
+    },
+    {
+      "role_name": "iam-self-service",
+      "role_arn": "arn:aws:iam::111122223333:role/iam-self-service",
+      "finding_type": "privilege_escalation_chain",
+      "title": "Privilege-escalation chain: iam:CreateRole + iam:CreateRole, iam:AttachRolePolicy",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "This permission combination lets the principal mint or rewrite an IAM role with arbitrary policies and hand it to a compute/service principal. That is a path to full account takeover \u2014 including the tokenization vault and payments KMS keys \u2014 i.e. total CDE compromise and a catastrophic PCI DSS failure, independent of how narrow any single statement looks.",
+      "remediation": "Break the chain: scope iam:PassRole to the exact service-role ARNs the workload must pass (never '*') and add an iam:PassedToService condition; remove iam:CreateRole / iam:AttachRolePolicy / iam:PutRolePolicy unless this is a provisioning role, in which case gate it behind a permission boundary that the created roles must inherit.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "iam:PassRole"
+        ],
+        "Resource": [
+          "arn:aws:iam::ACCOUNT:role/service-role/specific-task-role"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "iam:PassedToService": "ecs-tasks.amazonaws.com"
+          }
+        }
+      },
+      "evidence": {
+        "chain": "iam:CreateRole + iam:CreateRole, iam:AttachRolePolicy",
+        "companions": [
+          "iam:CreateRole",
+          "iam:AttachRolePolicy"
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_iam_self_service_privilege_escalation_chain\" {\n  name        = \"yuno-remediated-iam_self_service\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"iam:PassRole\"]\n        Resource = [\"arn:aws:iam::ACCOUNT:role/service-role/specific-task-role\"]\n        Condition = {\n          StringEquals = {\n            \"iam:PassedToService\" = \"ecs-tasks.amazonaws.com\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_iam_self_service_privilege_escalation_chain\" {\n  role       = \"iam-self-service\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_iam_self_service_privilege_escalation_chain.arn\n}"
+    },
+    {
+      "role_name": "legacy-cron",
+      "role_arn": "arn:aws:iam::111122223333:role/legacy-cron",
+      "finding_type": "insecure_trust_policy",
+      "title": "Trust policy allows assumption by ANY AWS principal",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Any AWS account on earth can assume this role and inherit all of its permissions. In a payments context this is a direct path into the CDE and an immediate PCI DSS Req. 7/8 failure.",
+      "remediation": "Replace the broad principal with the specific role ARN(s) that legitimately assume this role, and fence the trust with sts:ExternalId and/or aws:PrincipalOrgID so only your organization's known callers qualify.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::TRUSTED_ACCOUNT:role/specific-caller-role"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "StringEquals": {
+            "sts:ExternalId": "REPLACE_WITH_SHARED_SECRET",
+            "aws:PrincipalOrgID": "o-REPLACE_WITH_ORG_ID"
+          }
+        }
+      },
+      "evidence": {
+        "principal": "*",
+        "condition": {}
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Note: Updates the trust policy of existing role 'legacy-cron'.\n# Bring it under Terraform management first:\n#   terraform import aws_iam_role.legacy_cron legacy-cron\n\nresource \"aws_iam_role\" \"legacy_cron\" {\n  name = \"legacy-cron\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Principal = {\n          AWS = \"arn:aws:iam::TRUSTED_ACCOUNT:role/specific-caller-role\"\n        }\n        Action = \"sts:AssumeRole\"\n        Condition = {\n          StringEquals = {\n            \"sts:ExternalId\" = \"REPLACE_WITH_SHARED_SECRET\"\n            \"aws:PrincipalOrgID\" = \"o-REPLACE_WITH_ORG_ID\"\n          }\n        }\n      },\n    ]\n  })\n\n  lifecycle {\n    ignore_changes = [description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "payments-kms-admin",
+      "role_arn": "arn:aws:iam::111122223333:role/payments-kms-admin",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Payments KMS keys",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Controls the KMS keys that encrypt cardholder data at rest. Decrypt/Encrypt access here means an attacker can read or forge encrypted PANs, defeating PCI DSS Req. 3.5/3.6 key-management controls.",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network. Note: Replace the generic KMS key wildcard with your specific Key UUID ARNs during deployment, as IAM identity policies do not natively resolve wildcards on KMS alias strings for cryptographic operations.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:ReEncryptFrom"
+        ],
+        "Resource": [
+          "arn:aws:kms:*:*:key/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:ReEncryptFrom"
+        ],
+        "resources": [
+          "arn:aws:kms:us-east-1:111122223333:alias/payments-settlement"
+        ],
+        "source_type": "inline",
+        "source_name": "kms-payments-admin"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "kms-payments-admin",
+      "policy_fingerprint": "276d17671f17",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_payments_kms_admin_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-payments_kms_admin\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"kms:Encrypt\", \"kms:Decrypt\", \"kms:GenerateDataKey\", \"kms:ReEncryptFrom\"]\n        Resource = [\"arn:aws:kms:*:*:key/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_payments_kms_admin_pci_sensitive_data_access\" {\n  role       = \"payments-kms-admin\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_payments_kms_admin_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "tokenization-service",
+      "role_arn": "arn:aws:iam::111122223333:role/tokenization-service",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Tokenization vault secrets (Secrets Manager)",
+      "severity": "Critical",
+      "base_severity": "Critical",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Grants reach into the tokenization vault that maps tokens to PANs. Compromise enables detokenization of cardholder data \u2014 a reportable PCI DSS Req. 3.4 breach and effectively a full CDE compromise.",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:*"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "secretsmanager:*"
+        ],
+        "resources": [
+          "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/tokenization/*"
+        ],
+        "source_type": "inline",
+        "source_name": "tokenization-vault-full"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "tokenization-vault-full",
+      "policy_fingerprint": "32f1bf85d873",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_tokenization_service_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-tokenization_service\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:*\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_tokenization_service_pci_sensitive_data_access\" {\n  role       = \"tokenization-service\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_tokenization_service_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "cross-region-replicator",
+      "role_arn": "arn:aws:iam::111122223333:role/cross-region-replicator",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Payments KMS keys",
+      "severity": "High",
+      "base_severity": "Critical",
+      "was_mitigated": true,
+      "mitigations": [
+        "condition_keys:aws:SourceIp"
+      ],
+      "blast_radius": "Controls the KMS keys that encrypt cardholder data at rest. Decrypt/Encrypt access here means an attacker can read or forge encrypted PANs, defeating PCI DSS Req. 3.5/3.6 key-management controls.",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network. Note: Replace the generic KMS key wildcard with your specific Key UUID ARNs during deployment, as IAM identity policies do not natively resolve wildcards on KMS alias strings for cryptographic operations.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": [
+          "arn:aws:kms:*:*:key/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "resources": [
+          "arn:aws:kms:us-west-2:111122223333:alias/payments-replica"
+        ],
+        "source_type": "inline",
+        "source_name": "kms-replication-fenced"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "kms-replication-fenced",
+      "policy_fingerprint": "c8b67851af1f",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_cross_region_replicator_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-cross_region_replicator\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"kms:Encrypt\", \"kms:Decrypt\", \"kms:GenerateDataKey\"]\n        Resource = [\"arn:aws:kms:*:*:key/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_cross_region_replicator_pci_sensitive_data_access\" {\n  role       = \"cross-region-replicator\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_cross_region_replicator_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "external-analytics-bridge",
+      "role_arn": "arn:aws:iam::111122223333:role/external-analytics-bridge",
+      "finding_type": "insecure_trust_policy",
+      "title": "Unconditioned cross-account root trust to 999988887777",
+      "severity": "High",
+      "base_severity": "High",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Every principal in external account 999988887777 can assume this role. Without an sts:ExternalId / aws:PrincipalOrgID fence this is exploitable via the confused-deputy pattern, exposing whatever payment resources the role can reach.",
+      "remediation": "Replace the broad principal with the specific role ARN(s) that legitimately assume this role, and fence the trust with sts:ExternalId and/or aws:PrincipalOrgID so only your organization's known callers qualify.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::TRUSTED_ACCOUNT:role/specific-caller-role"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "StringEquals": {
+            "sts:ExternalId": "REPLACE_WITH_SHARED_SECRET",
+            "aws:PrincipalOrgID": "o-REPLACE_WITH_ORG_ID"
+          }
+        }
+      },
+      "evidence": {
+        "principal": {
+          "AWS": "arn:aws:iam::999988887777:root"
+        },
+        "condition": {}
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Note: Updates the trust policy of existing role 'external-analytics-bridge'.\n# Bring it under Terraform management first:\n#   terraform import aws_iam_role.external_analytics_bridge external-analytics-bridge\n\nresource \"aws_iam_role\" \"external_analytics_bridge\" {\n  name = \"external-analytics-bridge\"\n\n  assume_role_policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Principal = {\n          AWS = \"arn:aws:iam::TRUSTED_ACCOUNT:role/specific-caller-role\"\n        }\n        Action = \"sts:AssumeRole\"\n        Condition = {\n          StringEquals = {\n            \"sts:ExternalId\" = \"REPLACE_WITH_SHARED_SECRET\"\n            \"aws:PrincipalOrgID\" = \"o-REPLACE_WITH_ORG_ID\"\n          }\n        }\n      },\n    ]\n  })\n\n  lifecycle {\n    ignore_changes = [description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "refund-processor",
+      "role_arn": "arn:aws:iam::111122223333:role/refund-processor",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Provider credentials (Secrets Manager)",
+      "severity": "High",
+      "base_severity": "High",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Exposes live acquirer / PSP API credentials. An attacker could initiate or reroute settlements on behalf of the gateway, breaching PCI DSS Req. 3 (protection of stored credentials) and Req. 7 (least privilege on cardholder-data systems).",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "resources": [
+          "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/refunds-gateway-AbCdEf"
+        ],
+        "source_type": "inline",
+        "source_name": "refund-provider-read"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "refund-provider-read",
+      "policy_fingerprint": "da6ab4cb3f41",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_refund_processor_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-refund_processor\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/providers/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_refund_processor_pci_sensitive_data_access\" {\n  role       = \"refund-processor\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_refund_processor_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "token-vault-rotation",
+      "role_arn": "arn:aws:iam::111122223333:role/token-vault-rotation",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Tokenization vault secrets (Secrets Manager)",
+      "severity": "High",
+      "base_severity": "Critical",
+      "was_mitigated": true,
+      "mitigations": [
+        "condition_keys:aws:SourceVpc"
+      ],
+      "blast_radius": "Grants reach into the tokenization vault that maps tokens to PANs. Compromise enables detokenization of cardholder data \u2014 a reportable PCI DSS Req. 3.4 breach and effectively a full CDE compromise.",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue"
+        ],
+        "resources": [
+          "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/tokenization/*"
+        ],
+        "source_type": "inline",
+        "source_name": "vault-rotate-fenced"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "vault-rotate-fenced",
+      "policy_fingerprint": "09aafb428a19",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_token_vault_rotation_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-token_vault_rotation\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:PutSecretValue\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_token_vault_rotation_pci_sensitive_data_access\" {\n  role       = \"token-vault-rotation\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_token_vault_rotation_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "break-glass-admin",
+      "role_arn": "arn:aws:iam::111122223333:role/break-glass-admin",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [],
+        "sample_resources": [
+          [
+            "*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.break_glass_admin break-glass-admin\n\nresource \"aws_iam_policy\" \"boundary_break_glass_admin\" {\n  name        = \"yuno-boundary-break_glass_admin\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"break_glass_admin\" {\n  name                 = \"break-glass-admin\"\n  permissions_boundary = aws_iam_policy.boundary_break_glass_admin.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "checkout-router",
+      "role_arn": "arn:aws:iam::111122223333:role/checkout-router",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "sample_resources": [
+          [
+            "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.checkout_router checkout-router\n\nresource \"aws_iam_policy\" \"boundary_checkout_router\" {\n  name        = \"yuno-boundary-checkout_router\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:DescribeSecret\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/providers/*\"]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"checkout_router\" {\n  name                 = \"checkout-router\"\n  permissions_boundary = aws_iam_policy.boundary_checkout_router.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "checkout-router",
+      "role_arn": "arn:aws:iam::111122223333:role/checkout-router",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Provider credentials (Secrets Manager)",
+      "severity": "Medium",
+      "base_severity": "High",
+      "was_mitigated": true,
+      "mitigations": [
+        "condition_keys:aws:SourceVpc"
+      ],
+      "blast_radius": "Exposes live acquirer / PSP API credentials. An attacker could initiate or reroute settlements on behalf of the gateway, breaching PCI DSS Req. 3 (protection of stored credentials) and Req. 7 (least privilege on cardholder-data systems).",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "resources": [
+          "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/*"
+        ],
+        "source_type": "inline",
+        "source_name": "checkout-provider-read"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "checkout-provider-read",
+      "policy_fingerprint": "b1f2b78cb676",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_checkout_router_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-checkout_router\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:DescribeSecret\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/providers/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_checkout_router_pci_sensitive_data_access\" {\n  role       = \"checkout-router\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_checkout_router_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "cross-region-replicator",
+      "role_arn": "arn:aws:iam::111122223333:role/cross-region-replicator",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": [
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "sample_resources": [
+          [
+            "arn:aws:kms:us-west-2:111122223333:alias/payments-replica"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.cross_region_replicator cross-region-replicator\n\nresource \"aws_iam_policy\" \"boundary_cross_region_replicator\" {\n  name        = \"yuno-boundary-cross_region_replicator\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"kms:Encrypt\", \"kms:Decrypt\", \"kms:GenerateDataKey\"]\n        Resource = [\"arn:aws:kms:*:*:key/*\"]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"cross_region_replicator\" {\n  name                 = \"cross-region-replicator\"\n  permissions_boundary = aws_iam_policy.boundary_cross_region_replicator.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "data-warehouse-sync",
+      "role_arn": "arn:aws:iam::111122223333:role/data-warehouse-sync",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "sample_resources": [
+          [
+            "*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.data_warehouse_sync data-warehouse-sync\n\nresource \"aws_iam_policy\" \"boundary_data_warehouse_sync\" {\n  name        = \"yuno-boundary-data_warehouse_sync\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:*\", \"kms:Decrypt\", \"kms:GenerateDataKey\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"data_warehouse_sync\" {\n  name                 = \"data-warehouse-sync\"\n  permissions_boundary = aws_iam_policy.boundary_data_warehouse_sync.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "db-migration-runner",
+      "role_arn": "arn:aws:iam::111122223333:role/db-migration-runner",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Provider credentials (Secrets Manager)",
+      "severity": "Medium",
+      "base_severity": "High",
+      "was_mitigated": true,
+      "mitigations": [
+        "permission_boundary_present:arn:aws:iam::111122223333:policy/OpaqueBoundaryNotExported"
+      ],
+      "blast_radius": "Exposes live acquirer / PSP API credentials. An attacker could initiate or reroute settlements on behalf of the gateway, breaching PCI DSS Req. 3 (protection of stored credentials) and Req. 7 (least privilege on cardholder-data systems).",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "resources": [
+          "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/db-master-*"
+        ],
+        "source_type": "inline",
+        "source_name": "db-secret-read"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "db-secret-read",
+      "policy_fingerprint": "9a623f5a5ad9",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_db_migration_runner_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-db_migration_runner\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:DescribeSecret\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/providers/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_db_migration_runner_pci_sensitive_data_access\" {\n  role       = \"db-migration-runner\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_db_migration_runner_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "fraud-scoring-batch",
+      "role_arn": "arn:aws:iam::111122223333:role/fraud-scoring-batch",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "sample_resources": [
+          [
+            "*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.fraud_scoring_batch fraud-scoring-batch\n\nresource \"aws_iam_policy\" \"boundary_fraud_scoring_batch\" {\n  name        = \"yuno-boundary-fraud_scoring_batch\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:*\", \"kms:Decrypt\", \"kms:GenerateDataKey\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"fraud_scoring_batch\" {\n  name                 = \"fraud-scoring-batch\"\n  permissions_boundary = aws_iam_policy.boundary_fraud_scoring_batch.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "kms-rotation-lambda",
+      "role_arn": "arn:aws:iam::111122223333:role/kms-rotation-lambda",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Production payment asset access: Payments KMS keys",
+      "severity": "Medium",
+      "base_severity": "Critical",
+      "was_mitigated": true,
+      "mitigations": [
+        "permission_boundary_caps:arn:aws:iam::111122223333:policy/ProdNetworkBoundary"
+      ],
+      "blast_radius": "Controls the KMS keys that encrypt cardholder data at rest. Decrypt/Encrypt access here means an attacker can read or forge encrypted PANs, defeating PCI DSS Req. 3.5/3.6 key-management controls.",
+      "remediation": "Replace the wildcard/broad statement with a least-privilege block that (1) names only the exact secret/key ARNs the service needs, (2) drops write actions unless operationally required, and (3) adds an aws:SourceVpc (or aws:SourceVpce) guardrail so the credential is only usable from inside the production CDE network. Note: Replace the generic KMS key wildcard with your specific Key UUID ARNs during deployment, as IAM identity policies do not natively resolve wildcards on KMS alias strings for cryptographic operations.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "kms:*"
+        ],
+        "Resource": [
+          "arn:aws:kms:*:*:key/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:SourceVpc": "vpc-REPLACE_WITH_PROD_VPC"
+          }
+        }
+      },
+      "evidence": {
+        "actions": [
+          "kms:*"
+        ],
+        "resources": [
+          "arn:aws:kms:us-east-1:111122223333:alias/payments-card-encryption"
+        ],
+        "source_type": "inline",
+        "source_name": "kms-wildcard-rotation"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "kms-wildcard-rotation",
+      "policy_fingerprint": "068bf96a5661",
+      "remediation_terraform": "resource \"aws_iam_policy\" \"remediated_kms_rotation_lambda_pci_sensitive_data_access\" {\n  name        = \"yuno-remediated-kms_rotation_lambda\"\n  description = \"Least-privilege policy \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"kms:*\"]\n        Resource = [\"arn:aws:kms:*:*:key/*\"]\n        Condition = {\n          StringEquals = {\n            \"aws:SourceVpc\" = \"vpc-REPLACE_WITH_PROD_VPC\"\n          }\n        }\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role_policy_attachment\" \"remediated_kms_rotation_lambda_pci_sensitive_data_access\" {\n  role       = \"kms-rotation-lambda\"  # replace with your tf resource reference\n  policy_arn = aws_iam_policy.remediated_kms_rotation_lambda_pci_sensitive_data_access.arn\n}"
+    },
+    {
+      "role_name": "merchant-onboarding",
+      "role_arn": "arn:aws:iam::111122223333:role/merchant-onboarding",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "sample_resources": [
+          [
+            "*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.merchant_onboarding merchant-onboarding\n\nresource \"aws_iam_policy\" \"boundary_merchant_onboarding\" {\n  name        = \"yuno-boundary-merchant_onboarding\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:DescribeSecret\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"merchant_onboarding\" {\n  name                 = \"merchant-onboarding\"\n  permissions_boundary = aws_iam_policy.boundary_merchant_onboarding.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "merchant-onboarding-service-v2",
+      "role_arn": "arn:aws:iam::111122223333:role/merchant-onboarding-service-v2",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ],
+        "sample_resources": [
+          [
+            "*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.merchant_onboarding_service_v2 merchant-onboarding-service-v2\n\nresource \"aws_iam_policy\" \"boundary_merchant_onboarding_service_v2\" {\n  name        = \"yuno-boundary-merchant_onboarding_service_v2\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:DescribeSecret\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"merchant_onboarding_service_v2\" {\n  name                 = \"merchant-onboarding-service-v2\"\n  permissions_boundary = aws_iam_policy.boundary_merchant_onboarding_service_v2.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "payments-kms-admin",
+      "role_arn": "arn:aws:iam::111122223333:role/payments-kms-admin",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:ReEncryptFrom"
+        ],
+        "Resource": [
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:GenerateDataKey",
+          "kms:ReEncryptFrom"
+        ],
+        "sample_resources": [
+          [
+            "arn:aws:kms:us-east-1:111122223333:alias/payments-settlement"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.payments_kms_admin payments-kms-admin\n\nresource \"aws_iam_policy\" \"boundary_payments_kms_admin\" {\n  name        = \"yuno-boundary-payments_kms_admin\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"kms:Encrypt\", \"kms:Decrypt\", \"kms:GenerateDataKey\", \"kms:ReEncryptFrom\"]\n        Resource = [\"arn:aws:kms:*:*:key/*\"]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"payments_kms_admin\" {\n  name                 = \"payments-kms-admin\"\n  permissions_boundary = aws_iam_policy.boundary_payments_kms_admin.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "refund-processor",
+      "role_arn": "arn:aws:iam::111122223333:role/refund-processor",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:GetSecretValue"
+        ],
+        "sample_resources": [
+          [
+            "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/refunds-gateway-AbCdEf"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.refund_processor refund-processor\n\nresource \"aws_iam_policy\" \"boundary_refund_processor\" {\n  name        = \"yuno-boundary-refund_processor\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/providers/*\"]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"refund_processor\" {\n  name                 = \"refund-processor\"\n  permissions_boundary = aws_iam_policy.boundary_refund_processor.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "reporting-etl",
+      "role_arn": "arn:aws:iam::111122223333:role/reporting-etl",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/providers/*",
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*",
+          "arn:aws:kms:*:*:key/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:*",
+          "kms:Decrypt",
+          "kms:GenerateDataKey"
+        ],
+        "sample_resources": [
+          [
+            "*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.reporting_etl reporting-etl\n\nresource \"aws_iam_policy\" \"boundary_reporting_etl\" {\n  name        = \"yuno-boundary-reporting_etl\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:*\", \"kms:Decrypt\", \"kms:GenerateDataKey\"]\n        Resource = [\n          \"arn:aws:secretsmanager:*:*:secret:prod/providers/*\",\n          \"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\",\n          \"arn:aws:kms:*:*:key/*\",\n        ]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"reporting_etl\" {\n  name                 = \"reporting-etl\"\n  permissions_boundary = aws_iam_policy.boundary_reporting_etl.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "token-vault-rotation",
+      "role_arn": "arn:aws:iam::111122223333:role/token-vault-rotation",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:PutSecretValue"
+        ],
+        "sample_resources": [
+          [
+            "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/tokenization/*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.token_vault_rotation token-vault-rotation\n\nresource \"aws_iam_policy\" \"boundary_token_vault_rotation\" {\n  name        = \"yuno-boundary-token_vault_rotation\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:GetSecretValue\", \"secretsmanager:PutSecretValue\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\"]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"token_vault_rotation\" {\n  name                 = \"token-vault-rotation\"\n  permissions_boundary = aws_iam_policy.boundary_token_vault_rotation.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "tokenization-service",
+      "role_arn": "arn:aws:iam::111122223333:role/tokenization-service",
+      "finding_type": "missing_permission_boundary",
+      "title": "PCI-scope role has no permission boundary",
+      "severity": "Medium",
+      "base_severity": "Medium",
+      "was_mitigated": false,
+      "mitigations": [],
+      "blast_radius": "Without a permission boundary, this role's maximum effective permissions are uncapped. Any future inline or managed policy attachment \u2014 deliberate or accidental \u2014 becomes effective immediately. For a role that already touches cardholder data (Secrets Manager or KMS), this means a single misconfigured attachment could silently promote the role to full-CDE access, violating PCI DSS Req. 7 (least-privilege enforcement) without any access-control review catching it.",
+      "remediation": "Attach a permission boundary that allows only the service-level API calls this role legitimately needs. Even a coarse boundary (read-specific secrets + KMS decrypt) is significantly safer than none. Use 'aws iam put-role-permissions-boundary' or the Terraform block below. The boundary should be maintained by a separate team or automation pipeline from the role's policies.",
+      "remediation_policy": {
+        "Effect": "Allow",
+        "Action": [
+          "secretsmanager:*"
+        ],
+        "Resource": [
+          "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*"
+        ]
+      },
+      "evidence": {
+        "pci_statements_count": 1,
+        "sample_actions": [
+          "secretsmanager:*"
+        ],
+        "sample_resources": [
+          [
+            "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/tokenization/*"
+          ]
+        ]
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": null,
+      "policy_fingerprint": null,
+      "remediation_terraform": "# Attaches a permissions boundary \u2014 caps maximum effective permissions.\n# Step 1: import the existing role (run once):\n#   terraform import aws_iam_role.tokenization_service tokenization-service\n\nresource \"aws_iam_policy\" \"boundary_tokenization_service\" {\n  name        = \"yuno-boundary-tokenization_service\"\n  description = \"Permission boundary \u2014 IAM Contextual Risk Analyzer\"\n\n  policy = jsonencode({\n    Version = \"2012-10-17\"\n    Statement = [\n      {\n        Effect = \"Allow\"\n        Action = [\"secretsmanager:*\"]\n        Resource = [\"arn:aws:secretsmanager:*:*:secret:prod/tokenization/*\"]\n      },\n    ]\n  })\n}\n\nresource \"aws_iam_role\" \"tokenization_service\" {\n  name                 = \"tokenization-service\"\n  permissions_boundary = aws_iam_policy.boundary_tokenization_service.arn\n\n  lifecycle {\n    ignore_changes = [assume_role_policy, inline_policy, description, path, tags]\n  }\n}"
+    },
+    {
+      "role_name": "dev-sandbox-tester",
+      "role_arn": "arn:aws:iam::111122223333:role/dev-sandbox-tester",
+      "finding_type": "pci_sensitive_data_access",
+      "title": "Broad secret/KMS access scoped to non-production",
+      "severity": "Informational",
+      "base_severity": "Low",
+      "was_mitigated": true,
+      "mitigations": [
+        "resource_scope:non_production_only"
+      ],
+      "blast_radius": "Wildcard access to secrets/KMS, but every resource is a dev/staging/sandbox prefix. No cardholder data is reachable; outside the CDE and out of PCI DSS scope.",
+      "remediation": "No urgent action. Optionally tighten the resource scope to the specific non-prod ARNs to keep blast radius minimal.",
+      "remediation_policy": null,
+      "evidence": {
+        "actions": [
+          "secretsmanager:*"
+        ],
+        "resources": [
+          "arn:aws:secretsmanager:us-east-1:111122223333:secret:dev/*"
+        ],
+        "source": "dev-secrets-playground"
+      },
+      "shared_policy_arn": null,
+      "shared_policy_name": "dev-secrets-playground",
+      "policy_fingerprint": "e1d74122fe7f",
+      "remediation_terraform": null
+    }
+  ],
+  "warnings": []
+}

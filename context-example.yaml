@@ -1,0 +1,81 @@
+# context-example.yaml — Reference configuration file for the IAM Contextual Risk Analyzer.
+#
+# USAGE:
+#   python main.py --input fixtures/account-export-example.json --config context-example.yaml
+#
+# This file shows ALL overridable fields with their default values.
+# You only need to include the fields you want to change — any unspecified fields
+# fall back to the defaults defined in analyzer/config.py (AnalyzerConfig).
+# A partial override file is perfectly valid; you do not need the full document.
+
+# 1. Production-sensitive resources (PCI crown jewels)
+# Each list entry requires:
+#   - name: Human-readable identifier for the resource
+#   - arn_patterns: List of ARN patterns (with wildcards) to match in policies
+#   - blast_radius: Plain-language description of the security impact if the resource is compromised
+sensitive_resources:
+  - name: "Provider credentials (Secrets Manager)"
+    arn_patterns:
+      - "arn:aws:secretsmanager:*:*:secret:prod/providers/*"
+    blast_radius: "Exposes live acquirer / PSP API credentials. An attacker could initiate or reroute settlements on behalf of the gateway, breaching PCI DSS Req. 3 (protection of stored credentials) and Req. 7 (least privilege on cardholder-data systems)."
+  - name: "Tokenization vault secrets (Secrets Manager)"
+    arn_patterns:
+      - "arn:aws:secretsmanager:*:*:secret:prod/tokenization/*"
+    blast_radius: "Grants reach into the tokenization vault that maps tokens to PANs. Compromise enables detokenization of cardholder data — a reportable PCI DSS Req. 3.4 breach and effectively a full CDE compromise."
+  - name: "Payments KMS keys"
+    arn_patterns:
+      - "arn:aws:kms:*:*:alias/payments-*"
+    blast_radius: "Controls the KMS keys that encrypt cardholder data at rest. Decrypt/Encrypt access here means an attacker can read or forge encrypted PANs, defeating PCI DSS Req. 3.5/3.6 key-management controls."
+
+# 2. Resource patterns considered non-production / development.
+# The engine automatically downgrades findings to INFORMATIONAL/LOW if the
+# wildcard resources in a policy statement match only these patterns.
+non_production_patterns:
+  - "arn:aws:secretsmanager:*:*:secret:dev/*"
+  - "arn:aws:secretsmanager:*:*:secret:staging/*"
+  - "arn:aws:secretsmanager:*:*:secret:sandbox/*"
+  - "arn:aws:kms:*:*:alias/dev-*"
+
+# 3. AWS actions considered sensitive when used against the critical resources above.
+sensitive_actions:
+  - "secretsmanager:GetSecretValue"
+  - "secretsmanager:GetSecret*"
+  - "secretsmanager:DescribeSecret"
+  - "secretsmanager:PutSecretValue"
+  - "secretsmanager:UpdateSecret"
+  - "secretsmanager:DeleteSecret"
+  - "kms:Decrypt"
+  - "kms:Encrypt"
+  - "kms:GenerateDataKey"
+  - "kms:GenerateDataKey*"
+  - "kms:ReEncrypt*"
+
+# 4. Trusted AWS account IDs (12-digit) owned by your organization.
+# Cross-account trust policies toward accounts in this list will not generate
+# alerts unless they also lack an origin condition.
+trusted_account_ids:
+  - "111122223333"
+  - "444455556666"
+
+# 5. Condition keys that act as network or identity guardrails.
+# The presence of any of these (with a non-empty value) on a dangerous statement
+# reduces the finding severity by 1 level.
+mitigating_condition_keys:
+  - "aws:SourceVpc"
+  - "aws:SourceVpce"
+  - "aws:SourceIp"
+  - "aws:VpcSourceIp"
+  - "aws:PrincipalOrgID"
+
+# 6. Secondary actions for privilege-escalation detection.
+# The engine flags an escalation chain when iam:PassRole on broad resources
+# is combined with any of these actions.
+escalation_companion_actions:
+  - "iam:CreateRole"
+  - "iam:AttachRolePolicy"
+  - "iam:PutRolePolicy"
+  - "iam:CreatePolicyVersion"
+  - "iam:UpdateAssumeRolePolicy"
+  - "sts:AssumeRole"
+  - "lambda:CreateFunction"
+  - "ec2:RunInstances"

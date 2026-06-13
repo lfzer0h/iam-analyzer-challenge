@@ -1,0 +1,7 @@
+# Runtime dependencies. The engine and parser use only the Python standard
+# library; PyYAML is needed only for the optional --config override and the
+# YAML report flavor.
+PyYAML>=6.0
+
+# Dev / test
+pytest>=7.4

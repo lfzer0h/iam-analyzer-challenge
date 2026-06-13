@@ -1,0 +1,905 @@
+{
+  "_readme": {
+    "what": "Synthetic output of `aws iam get-account-authorization-details` for a PCI DSS payment-gateway AWS account. Drop in a real export from your own account to analyze actual risk.",
+    "how_to_replace": "Run: aws iam get-account-authorization-details --output json > fixtures/account-export-example.json",
+    "role_count": 27,
+    "role_categories": {
+      "human_or_federated": ["developer-readonly", "security-auditor", "iam-self-service", "data-analyst-readonly"],
+      "service_workloads": ["checkout-router", "tokenization-service", "refund-processor", "payment-capture", "fraud-scoring-batch", "reporting-etl", "data-warehouse-sync", "merchant-onboarding", "merchant-onboarding-service-v2", "kms-rotation-lambda", "webhook-dispatcher", "observability-agent", "legacy-cron", "ci-deployer", "db-migration-runner", "settlement-batch", "backup-vault-role", "payments-kms-admin"],
+      "cross_account": ["external-analytics-bridge", "partner-settlement-reader", "devops-cicd-pipeline"],
+      "ambiguous": ["dev-sandbox-tester"]
+    },
+    "design_intent": "Each role was crafted to expose a specific detection ambiguity. Some roles look dangerous but are controlled; others look clean but hide escalation chains.",
+    "ambiguity_scenarios": [
+      {"role": "kms-rotation-lambda",      "looks_like": "CRITICAL — kms:* on payments aliases",    "really_is": "MEDIUM — ProdNetworkBoundary caps effective permissions"},
+      {"role": "dev-sandbox-tester",       "looks_like": "HIGH — secretsmanager:* wildcard",         "really_is": "INFORMATIONAL — resources scoped to dev/* namespace only"},
+      {"role": "legacy-cron",              "looks_like": "safe — minimal S3 permissions",            "really_is": "CRITICAL — Principal:* in trust policy (confused-deputy risk)"},
+      {"role": "ci-deployer",              "looks_like": "safe — deploy automation",                  "really_is": "CRITICAL — hidden PassRole(*) + lambda:CreateFunction escalation chain"},
+      {"role": "settlement-batch",         "looks_like": "risky — iam:PassRole present",             "really_is": "clean — PassRole scoped to specific role ARN, not a wildcard"},
+      {"role": "backup-vault-role",        "looks_like": "risky — backup:* on Resource:*",           "really_is": "clean — backup:* is not a PCI-sensitive action, no finding fires"},
+      {"role": "checkout-router",          "looks_like": "CRITICAL — secretsmanager access",         "really_is": "MEDIUM — aws:SourceVpc condition mitigates to network-scoped access"},
+      {"role": "partner-settlement-reader","looks_like": "risky — cross-account trust",              "really_is": "clean — trusted account + sts:ExternalId condition present"}
+    ],
+    "campaign_triggers": {
+      "CAMP-001": "Managed policy LegacyBroadSecretsAccess attached to data-warehouse-sync, reporting-etl, fraud-scoring-batch",
+      "CAMP-002": "Identical inline policy SharedLaxSecretsPolicy in merchant-onboarding and merchant-onboarding-service-v2 (fingerprint-based grouping, not name-based)"
+    }
+  },
+  "RoleDetailList": [
+    {
+      "RoleName": "checkout-router",
+      "Arn": "arn:aws:iam::111122223333:role/checkout-router",
+      "Path": "/service/",
+      "CreateDate": "2023-02-11T10:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"Service": "ec2.amazonaws.com"},
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "checkout-provider-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "ProviderSecretsReadFenced",
+                "Effect": "Allow",
+                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/*",
+                "Condition": {"StringEquals": {"aws:SourceVpc": "vpc-0aa11bb22cc33dd44"}}
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "tokenization-service",
+      "Arn": "arn:aws:iam::111122223333:role/tokenization-service",
+      "Path": "/service/",
+      "CreateDate": "2022-09-01T08:30:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"Service": "lambda.amazonaws.com"},
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "tokenization-vault-full",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "VaultWildcard",
+                "Effect": "Allow",
+                "Action": "secretsmanager:*",
+                "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/tokenization/*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "merchant-onboarding",
+      "Arn": "arn:aws:iam::111122223333:role/merchant-onboarding",
+      "Path": "/human/",
+      "CreateDate": "2023-05-20T12:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"Federated": "arn:aws:iam::111122223333:saml-provider/Okta"},
+            "Action": "sts:AssumeRoleWithSAML",
+            "Condition": {"StringEquals": {"SAML:aud": "https://signin.aws.amazon.com/saml"}}
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "onboarding-bucket-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["s3:GetObject", "s3:ListBucket"],
+                "Resource": [
+                  "arn:aws:s3:::yuno-merchant-docs",
+                  "arn:aws:s3:::yuno-merchant-docs/*"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "PolicyName": "SharedLaxSecretsPolicy",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "BroadProviderAccess",
+                "Effect": "Allow",
+                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "merchant-onboarding-service-v2",
+      "Arn": "arn:aws:iam::111122223333:role/merchant-onboarding-service-v2",
+      "Path": "/service/",
+      "CreateDate": "2024-11-01T09:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"Service": "ecs-tasks.amazonaws.com"},
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "SharedLaxSecretsPolicy",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "BroadProviderAccess",
+                "Effect": "Allow",
+                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "data-warehouse-sync",
+      "Arn": "arn:aws:iam::111122223333:role/data-warehouse-sync",
+      "Path": "/service/",
+      "CreateDate": "2021-11-03T09:15:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "glue.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": [
+        {"PolicyName": "LegacyBroadSecretsAccess", "PolicyArn": "arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess"}
+      ],
+      "Tags": []
+    },
+    {
+      "RoleName": "reporting-etl",
+      "Arn": "arn:aws:iam::111122223333:role/reporting-etl",
+      "Path": "/service/",
+      "CreateDate": "2021-11-03T09:20:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "glue.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": [
+        {"PolicyName": "LegacyBroadSecretsAccess", "PolicyArn": "arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess"}
+      ],
+      "Tags": []
+    },
+    {
+      "RoleName": "fraud-scoring-batch",
+      "Arn": "arn:aws:iam::111122223333:role/fraud-scoring-batch",
+      "Path": "/service/",
+      "CreateDate": "2022-01-18T14:45:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": [
+        {"PolicyName": "LegacyBroadSecretsAccess", "PolicyArn": "arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess"}
+      ],
+      "Tags": []
+    },
+    {
+      "RoleName": "dev-sandbox-tester",
+      "Arn": "arn:aws:iam::111122223333:role/dev-sandbox-tester",
+      "Path": "/human/",
+      "CreateDate": "2024-03-01T11:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Federated": "arn:aws:iam::111122223333:saml-provider/Okta"}, "Action": "sts:AssumeRoleWithSAML",
+           "Condition": {"StringEquals": {"SAML:aud": "https://signin.aws.amazon.com/saml"}}}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "dev-secrets-playground",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "DevWildcardLooksScary",
+                "Effect": "Allow",
+                "Action": "secretsmanager:*",
+                "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:dev/*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "env", "Value": "dev"}]
+    },
+    {
+      "RoleName": "kms-rotation-lambda",
+      "Arn": "arn:aws:iam::111122223333:role/kms-rotation-lambda",
+      "Path": "/service/",
+      "CreateDate": "2023-07-22T16:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "kms-wildcard-rotation",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "KmsWildcardButBounded",
+                "Effect": "Allow",
+                "Action": "kms:*",
+                "Resource": "arn:aws:kms:us-east-1:111122223333:alias/payments-card-encryption"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "PermissionsBoundary": {
+        "PermissionsBoundaryType": "Policy",
+        "PermissionsBoundaryArn": "arn:aws:iam::111122223333:policy/ProdNetworkBoundary"
+      },
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "ci-deployer",
+      "Arn": "arn:aws:iam::111122223333:role/ci-deployer",
+      "Path": "/service/",
+      "CreateDate": "2022-04-10T10:30:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "codebuild.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "deployer-iam-ops",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "LooksLikeNormalDeploy",
+                "Effect": "Allow",
+                "Action": ["cloudformation:*", "s3:GetObject"],
+                "Resource": "*"
+              },
+              {
+                "Sid": "HiddenEscalation",
+                "Effect": "Allow",
+                "Action": ["iam:PassRole", "iam:CreateRole", "iam:AttachRolePolicy"],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "legacy-cron",
+      "Arn": "arn:aws:iam::111122223333:role/legacy-cron",
+      "Path": "/service/",
+      "CreateDate": "2019-08-14T07:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "AnyoneCanAssume",
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "tiny-s3-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::yuno-cron-jobs/*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "partner-settlement-reader",
+      "Arn": "arn:aws:iam::111122223333:role/partner-settlement-reader",
+      "Path": "/crossaccount/",
+      "CreateDate": "2023-01-05T13:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"AWS": "arn:aws:iam::444455556666:root"},
+            "Action": "sts:AssumeRole",
+            "Condition": {"StringEquals": {"sts:ExternalId": "yuno-partner-7f3a9c"}}
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "settlement-report-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::yuno-settlement-reports/*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "external-analytics-bridge",
+      "Arn": "arn:aws:iam::111122223333:role/external-analytics-bridge",
+      "Path": "/crossaccount/",
+      "CreateDate": "2024-02-14T09:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"AWS": "arn:aws:iam::999988887777:root"},
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "analytics-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": ["athena:*", "glue:GetTable"], "Resource": "*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "payments-kms-admin",
+      "Arn": "arn:aws:iam::111122223333:role/payments-kms-admin",
+      "Path": "/service/",
+      "CreateDate": "2022-06-30T15:30:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "kms-payments-admin",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey", "kms:ReEncryptFrom"],
+                "Resource": "arn:aws:kms:us-east-1:111122223333:alias/payments-settlement"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "webhook-dispatcher",
+      "Arn": "arn:aws:iam::111122223333:role/webhook-dispatcher",
+      "Path": "/service/",
+      "CreateDate": "2023-03-12T10:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "webhook-queue",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": ["sqs:SendMessage", "sns:Publish"],
+               "Resource": ["arn:aws:sqs:us-east-1:111122223333:webhooks", "arn:aws:sns:us-east-1:111122223333:webhooks"]}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "refund-processor",
+      "Arn": "arn:aws:iam::111122223333:role/refund-processor",
+      "Path": "/service/",
+      "CreateDate": "2023-09-09T11:11:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "refund-provider-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": "secretsmanager:GetSecretValue",
+                "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/refunds-gateway-AbCdEf"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "settlement-batch",
+      "Arn": "arn:aws:iam::111122223333:role/settlement-batch",
+      "Path": "/service/",
+      "CreateDate": "2022-12-01T08:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "scoped-passrole",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "NarrowPassRoleNotEscalation",
+                "Effect": "Allow",
+                "Action": "iam:PassRole",
+                "Resource": "arn:aws:iam::111122223333:role/service-role/settlement-task-role",
+                "Condition": {"StringEquals": {"iam:PassedToService": "ecs-tasks.amazonaws.com"}}
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "observability-agent",
+      "Arn": "arn:aws:iam::111122223333:role/observability-agent",
+      "Path": "/service/",
+      "CreateDate": "2023-04-04T04:04:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "ec2.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "cw-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": ["cloudwatch:GetMetricData", "logs:GetLogEvents"], "Resource": "*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "db-migration-runner",
+      "Arn": "arn:aws:iam::111122223333:role/db-migration-runner",
+      "Path": "/service/",
+      "CreateDate": "2023-10-19T10:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "ecs-tasks.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "db-secret-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+                "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/providers/db-master-*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "PermissionsBoundary": {
+        "PermissionsBoundaryType": "Policy",
+        "PermissionsBoundaryArn": "arn:aws:iam::111122223333:policy/OpaqueBoundaryNotExported"
+      },
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "support-readonly-human",
+      "Arn": "arn:aws:iam::111122223333:role/support-readonly-human",
+      "Path": "/human/",
+      "CreateDate": "2024-01-02T09:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Federated": "arn:aws:iam::111122223333:saml-provider/Okta"}, "Action": "sts:AssumeRoleWithSAML",
+           "Condition": {"StringEquals": {"SAML:aud": "https://signin.aws.amazon.com/saml"}}}
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": [
+        {"PolicyName": "ReadOnlyAccess", "PolicyArn": "arn:aws:iam::aws:policy/ReadOnlyAccess"}
+      ],
+      "Tags": []
+    },
+    {
+      "RoleName": "token-vault-rotation",
+      "Arn": "arn:aws:iam::111122223333:role/token-vault-rotation",
+      "Path": "/service/",
+      "CreateDate": "2023-08-08T08:08:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "vault-rotate-fenced",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue"],
+                "Resource": "arn:aws:secretsmanager:us-east-1:111122223333:secret:prod/tokenization/*",
+                "Condition": {"StringEquals": {"aws:SourceVpc": "vpc-0aa11bb22cc33dd44"}}
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "cross-region-replicator",
+      "Arn": "arn:aws:iam::111122223333:role/cross-region-replicator",
+      "Path": "/service/",
+      "CreateDate": "2023-11-11T11:11:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "s3.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "kms-replication-fenced",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Action": ["kms:Encrypt", "kms:Decrypt", "kms:GenerateDataKey"],
+                "Resource": "arn:aws:kms:us-west-2:111122223333:alias/payments-replica",
+                "Condition": {"IpAddress": {"aws:SourceIp": "10.20.0.0/16"}}
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": [{"Key": "pci-scope", "Value": "cde"}]
+    },
+    {
+      "RoleName": "iam-self-service",
+      "Arn": "arn:aws:iam::111122223333:role/iam-self-service",
+      "Path": "/human/",
+      "CreateDate": "2022-07-07T07:07:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Federated": "arn:aws:iam::111122223333:saml-provider/Okta"}, "Action": "sts:AssumeRoleWithSAML",
+           "Condition": {"StringEquals": {"SAML:aud": "https://signin.aws.amazon.com/saml"}}}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "self-service-iam",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "SeeminglyLimited",
+                "Effect": "Allow",
+                "Action": ["iam:CreateRole", "iam:AttachRolePolicy", "iam:ListRoles"],
+                "Resource": "arn:aws:iam::111122223333:role/self-service/*"
+              }
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "lambda-edge-config",
+      "Arn": "arn:aws:iam::111122223333:role/lambda-edge-config",
+      "Path": "/service/",
+      "CreateDate": "2024-04-01T01:01:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "edgelambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "ssm-param-read",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "ssm:GetParameter", "Resource": "arn:aws:ssm:us-east-1:111122223333:parameter/edge/*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "backup-vault-role",
+      "Arn": "arn:aws:iam::111122223333:role/backup-vault-role",
+      "Path": "/service/",
+      "CreateDate": "2023-06-06T06:06:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "backup.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "backup-broad-but-not-pci",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "backup:*", "Resource": "*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    },
+    {
+      "RoleName": "break-glass-admin",
+      "Arn": "arn:aws:iam::111122223333:role/break-glass-admin",
+      "Path": "/human/",
+      "CreateDate": "2021-01-01T00:00:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {"AWS": "arn:aws:iam::111122223333:root"},
+            "Action": "sts:AssumeRole",
+            "Condition": {"Bool": {"aws:MultiFactorAuthPresent": "true"}}
+          }
+        ]
+      },
+      "RolePolicyList": [],
+      "AttachedManagedPolicies": [
+        {"PolicyName": "AdministratorAccess", "PolicyArn": "arn:aws:iam::aws:policy/AdministratorAccess"}
+      ],
+      "Tags": [{"Key": "break-glass", "Value": "true"}]
+    },
+    {
+      "RoleName": "open-data-publisher",
+      "Arn": "arn:aws:iam::111122223333:role/open-data-publisher",
+      "Path": "/service/",
+      "CreateDate": "2024-05-05T05:05:00Z",
+      "AssumeRolePolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}
+        ]
+      },
+      "RolePolicyList": [
+        {
+          "PolicyName": "publish-public-bucket",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": ["s3:PutObject"], "Resource": "arn:aws:s3:::yuno-public-status/*"}
+            ]
+          }
+        }
+      ],
+      "AttachedManagedPolicies": [],
+      "Tags": []
+    }
+  ],
+  "UserDetailList": [],
+  "GroupDetailList": [],
+  "Policies": [
+    {
+      "PolicyName": "LegacyBroadSecretsAccess",
+      "PolicyId": "ANPALEGACY000000001",
+      "Arn": "arn:aws:iam::111122223333:policy/LegacyBroadSecretsAccess",
+      "Path": "/",
+      "DefaultVersionId": "v3",
+      "AttachmentCount": 3,
+      "PolicyVersionList": [
+        {
+          "VersionId": "v3",
+          "IsDefaultVersion": true,
+          "Document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "BroadSecretsAndKms",
+                "Effect": "Allow",
+                "Action": ["secretsmanager:*", "kms:Decrypt", "kms:GenerateDataKey"],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "PolicyName": "ProdNetworkBoundary",
+      "PolicyId": "ANPABOUNDARY00000001",
+      "Arn": "arn:aws:iam::111122223333:policy/ProdNetworkBoundary",
+      "Path": "/",
+      "DefaultVersionId": "v1",
+      "AttachmentCount": 0,
+      "PolicyVersionList": [
+        {
+          "VersionId": "v1",
+          "IsDefaultVersion": true,
+          "Document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Sid": "BoundaryCapsToRotateOnly",
+                "Effect": "Allow",
+                "Action": [
+                  "kms:GenerateDataKeyWithoutPlaintext",
+                  "kms:DescribeKey",
+                  "kms:GetKeyRotationStatus",
+                  "kms:EnableKeyRotation",
+                  "logs:CreateLogStream",
+                  "logs:PutLogEvents"
+                ],
+                "Resource": "*"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "PolicyName": "ReadOnlyAccess",
+      "PolicyId": "ANPAAWSREADONLY00001",
+      "Arn": "arn:aws:iam::aws:policy/ReadOnlyAccess",
+      "Path": "/",
+      "DefaultVersionId": "v1",
+      "AttachmentCount": 1,
+      "PolicyVersionList": [
+        {
+          "VersionId": "v1",
+          "IsDefaultVersion": true,
+          "Document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": ["s3:Get*", "s3:List*", "ec2:Describe*", "cloudwatch:Get*"], "Resource": "*"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "PolicyName": "AdministratorAccess",
+      "PolicyId": "ANPAAWSADMIN0000001",
+      "Arn": "arn:aws:iam::aws:policy/AdministratorAccess",
+      "Path": "/",
+      "DefaultVersionId": "v1",
+      "AttachmentCount": 1,
+      "PolicyVersionList": [
+        {
+          "VersionId": "v1",
+          "IsDefaultVersion": true,
+          "Document": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {"Effect": "Allow", "Action": "*", "Resource": "*"}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
