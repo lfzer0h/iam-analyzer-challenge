@@ -16,9 +16,17 @@ Requires **Python 3.10+**. The engine uses only stdlib; `PyYAML` is installed fo
 `--config` argument.
 
 ```bash
-# 1. Virtual environment and dependency installation
+# 1. Virtual environment and dependency installation — pick one:
+
+## Option A: pip
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+## Option B: uv (https://docs.astral.sh/uv/)
+uv venv && source .venv/bin/activate
+uv pip install -r requirements.txt
+# ...or skip venv activation entirely and prefix every command below with `uv run`,
+# e.g. `uv run python main.py --input ... --output ...` / `uv run pytest -q`.
 
 # 2. Run against the included fixture (any of the three equivalent forms)
 python main.py          --input fixtures/account-export-example.json --output reports/
@@ -100,7 +108,12 @@ section + `Policies` section with resolvable version documents). It contains **2
 covering three principal types: human-assumable roles via SAML/Okta, service roles (EC2, Lambda,
 ECS, Glue, CodeBuild), and cross-account trust.
 
-### Misconfiguration Classes Covered
+### Ambiguity Scenarios Illustrated
+
+The table below highlights the **specific ambiguity** each role (or role group) was designed to
+test — it is a curated sample, not an enumeration of all 32 findings the tool actually emits
+against this fixture. See [Finding Count Reconciliation](#finding-count-reconciliation) below for
+the exhaustive, traceable breakdown.
 
 | # | Role(s) | Misconfiguration | Expected result |
 |---|---|---|---|
@@ -121,6 +134,53 @@ ECS, Glue, CodeBuild), and cross-account trust.
 **Intentional ambiguity** is in cases 7–11: roles that appear lethal but are correctly controlled,
 and roles that look clean but hide dangerous chains. Designing the fixture to capture that ambiguity
 is part of the challenge.
+
+> Rows 1, 2, 8, and 13 overlap on purpose: a role that touches a PCI resource *and* lacks a
+> permission boundary triggers **two** independent findings — `pci_sensitive_data_access` (rule A)
+> and `missing_permission_boundary` (rule E). That overlap, multiplied across 19 affected roles
+> plus the two campaigns, is why the fixture's real total (32) is larger than the 13 rows above.
+
+### Finding Count Reconciliation
+
+Running the analyzer against this fixture produces:
+
+```
+Analyzed 27 role(s): 32 finding(s) (10 critical, 6 high).
+```
+
+**By severity** (`findings.json` → `summary.by_severity`):
+
+| Severity | Count |
+|---|---|
+| Critical | 10 |
+| High | 6 |
+| Medium | 15 |
+| Low | 0 |
+| Informational | 1 |
+| **Total** | **32** |
+
+**By rule (finding type):**
+
+| Finding type | Count | Severities present |
+|---|---|---|
+| `privilege_escalation_chain` | 3 | Critical ×3 |
+| `insecure_trust_policy` | 2 | Critical ×1, High ×1 |
+| `pci_sensitive_data_access` | 15 | Critical ×6, High ×5, Medium ×3, Informational ×1 |
+| `missing_permission_boundary` | 12 | Medium ×12 |
+
+**By consolidation** (campaigns vs. standalone — `findings.json` → `remediation_campaigns` / `findings`):
+
+| | Findings | Roles |
+|---|---|---|
+| Folded into `CAMP-001` (`LegacyBroadSecretsAccess`) | 3 | `data-warehouse-sync`, `fraud-scoring-batch`, `reporting-etl` |
+| Folded into `CAMP-002` (`SharedLaxSecretsPolicy`) | 2 | `merchant-onboarding`, `merchant-onboarding-service-v2` |
+| Listed individually under `findings` | 27 | 19 distinct roles (several carry 2+ findings each) |
+| **Total** | **32** | — |
+
+**Role coverage:** 19 of the 27 fixture roles (≈70%) produce at least one finding. The remaining 8
+are deliberate true negatives, each locked in by a dedicated assertion in `tests/test_engine.py`:
+`partner-settlement-reader`, `webhook-dispatcher`, `settlement-batch`, `observability-agent`,
+`support-readonly-human`, `lambda-edge-config`, `backup-vault-role`, `open-data-publisher`.
 
 ---
 
